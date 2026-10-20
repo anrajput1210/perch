@@ -1,0 +1,67 @@
+# Builds Perch for Windows and macOS side by side: checks, Rust tests, then the installer / app bundles.
+# Pushing a tag like v0.0.1 also publishes them as a GitHub Release, which `npx github:anrajput1210/perch` installs.
+name: build
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the release and upload its files
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-latest # Apple Silicon
+          - os: macos-13 # Intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm run check
+      - run: cargo test
+        working-directory: src-tauri
+      - run: npm run dist
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          arch=$([ "$(uname -m)" = arm64 ] && echo aarch64 || echo x64)
+          app=src-tauri/target/release/bundle/macos/Perch.app
+          codesign --verify --deep --strict "$app" # ad-hoc signed: Apple Silicon refuses unsigned code
+          mkdir -p out
+          tar -czf "out/Perch_macos_${arch}.app.tar.gz" -C "$(dirname "$app")" Perch.app
+          cp src-tauri/target/release/bundle/dmg/*.dmg "out/Perch_macos_${arch}.dmg"
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: mkdir -p out && cp src-tauri/target/release/bundle/nsis/*-setup.exe out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: perch-${{ matrix.os }}
+          path: out/*
+
+      - name: Publish to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "Perch $GITHUB_REF_NAME" \
+            --notes "Install: \`npx github:anrajput1210/perch\`" 2>/dev/null || true # another job may have made it
+          gh release upload "$GITHUB_REF_NAME" out/* --clobber

@@ -1,0 +1,27 @@
+{
+  "name": "perch",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "A dynamic island for Windows and macOS: coding agents, music, timers, shelf, clipboard and more.",
+  "bin": { "perch": "installer/install.mjs" },
+  "files": ["installer"],
+  "scripts": {
+    "tokens": "node scripts/tokens.mjs",
+    "predev": "node scripts/tokens.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/tokens.mjs",
+    "build": "tsc --noEmit && vite build",
+    "check": "node scripts/check.ts",
+    "tauri": "tauri",
+    "dist": "node scripts/sidecar.mjs && tauri build --config src-tauri/tauri.bundle.json"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.3",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.7"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.4"
+  }
+}

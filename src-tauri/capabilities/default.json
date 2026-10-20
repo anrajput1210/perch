@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The island and settings windows: listen to core events, call Perch commands.",
+  "windows": ["main", "settings"],
+  "permissions": ["core:default"]
+}
