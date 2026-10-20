@@ -14,7 +14,7 @@
     "build": "tsc --noEmit && vite build",
     "check": "node scripts/check.ts",
     "tauri": "tauri",
-    "dist": "node scripts/sidecar.mjs && tauri build --config src-tauri/tauri.bundle.json"
+    "dist": "node scripts/sidecar.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.3",

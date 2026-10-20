@@ -19,7 +19,8 @@ jobs:
         include:
           - os: windows-latest
           - os: macos-latest # Apple Silicon
-          - os: macos-13 # Intel
+          - os: macos-latest # Intel, cross-compiled (GitHub retired its Intel Mac machines)
+            target: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +29,8 @@ jobs:
           node-version: 24
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -36,16 +39,21 @@ jobs:
       - run: cargo test
         working-directory: src-tauri
       - run: npm run dist
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
-          arch=$([ "$(uname -m)" = arm64 ] && echo aarch64 || echo x64)
-          app=src-tauri/target/release/bundle/macos/Perch.app
+          if [ -n "$TARGET" ]; then arch=x64; dir=src-tauri/target/$TARGET/release/bundle; else arch=aarch64; dir=src-tauri/target/release/bundle; fi
+          app=$dir/macos/Perch.app
           codesign --verify --deep --strict "$app" # ad-hoc signed: Apple Silicon refuses unsigned code
           mkdir -p out
           tar -czf "out/Perch_macos_${arch}.app.tar.gz" -C "$(dirname "$app")" Perch.app
-          cp src-tauri/target/release/bundle/dmg/*.dmg "out/Perch_macos_${arch}.dmg"
+          cp "$dir"/dmg/*.dmg "out/Perch_macos_${arch}.dmg"
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: bash
@@ -53,7 +61,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: perch-${{ matrix.os }}
+          name: perch-${{ matrix.os }}${{ matrix.target && '-intel' || '' }}
           path: out/*
 
       - name: Publish to the release
