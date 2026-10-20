@@ -268,3 +268,10 @@ body.preview { min-height: 100vh; background: #e9e7e2; color: #111; }
 .progress.scrubbing i { transition: none; }
 .wave { justify-content: space-between; gap: 0; }
 .wave i { flex: none; width: 3px; border-radius: 1.5px; }
+
+/* tucked: a double tap on the bar shrinks it to Dango and the privacy dots, until the next hover */
+.island[data-mode="mini"] .bar { padding: 0 var(--sp-5) 0 34px; }
+.island[data-mode="mini"] .bar-label, .island[data-mode="mini"] .bar-lead, .island[data-mode="mini"] .minis,
+.island[data-mode="mini"] .spacer { display: none; }
+.header .privacy { margin-right: var(--sp-2); }
+.header .privacy:empty { display: none; }

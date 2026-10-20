@@ -219,6 +219,11 @@ export class Widgets {
       return { label: `${next.title} · ${mins > 0 ? `in ${mins} min` : "now"}`, lead: `<span class="bar-dot meet"></span>` };
     }
     const m = this.media;
+    const cam = this.sys?.camera ?? [], mic = this.sys?.mic ?? [];
+    if ((cam.length || mic.length) && !m?.playing) {
+      const who = [...cam, ...mic].filter(Boolean);
+      return { label: `${cam.length && mic.length ? "Camera and mic" : cam.length ? "Camera" : "Microphone"} on${who.length ? ` · ${[...new Set(who)].join(", ")}` : ""}` };
+    }
     if (m?.playing) {
       const art = this.artUrl ? `<img class="bar-art" src="${esc(this.artUrl)}" alt="">` : "";
       return { label: [m.title, m.artist].filter(Boolean).join(" · "), lead: `${art}<span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>` };
@@ -231,7 +236,8 @@ export class Widgets {
     const s = this.sys;
     if (!s) return "";
     const dot = (kind: string, name: string, apps: string[]) => apps.length
-      ? `<i class="priv ${kind}" title="${name}: ${esc(apps.join(", "))}" role="img" aria-label="${name} in use by ${esc(apps.join(", "))}"></i>` : "";
+      ? `<i class="priv ${kind}" title="${name} on${apps.some(Boolean) ? `: ${esc(apps.join(", "))}` : ""}" role="img"
+          aria-label="${name} in use${apps.some(Boolean) ? ` by ${esc(apps.join(", "))}` : ""}"></i>` : "";
     return dot("cam", "Camera", s.camera) + dot("mic", "Microphone", s.mic);
   }
 
@@ -381,7 +387,7 @@ export class Widgets {
     </div><div class="col">
       ${s.battery != null ? meter(s.charging ? "Charging" : "Battery", s.battery, "live-bat") : ""}
       ${meter("CPU", s.cpu, "live-cpu-bar")}${meter("RAM", s.ram, "live-ram-bar")}
-      <p class="faint">${isMac ? "macOS shows camera and mic use in the menu bar." : priv.length ? `In use: ${esc(priv.join(", "))}` : "Camera and microphone aren't in use."}</p>
+      <p class="faint">${priv.length ? `In use: ${esc(priv.map((p) => p.replace(/ · $/, "")).join(", "))}` : "Camera and microphone aren't in use."}</p>
     </div></div>`;
   }
 

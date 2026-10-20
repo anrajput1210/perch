@@ -100,7 +100,7 @@ if (invoke) {
   // fake system/media/clipboard feeds so every widget can be seen without the app
   appearance({ theme: new URLSearchParams(location.search).get("theme") ?? "oled", opacity: 1 });
   const w = island.widgets;
-  let pos = 42, vol = 40;
+  let pos = 42, vol = 40, cam = false, mic = false;
   w.setMedia({ title: "Late Night Drive", artist: "Perch Radio", app: "Spotify", playing: true, position: pos, duration: 215 });
   w.addClip("npm run tauri dev");
   w.addClip("https://github.com/tauri-apps/tauri");
@@ -108,10 +108,11 @@ if (invoke) {
   setInterval(() => {
     pos = (pos + 1) % 215;
     w.setMedia({ title: "Late Night Drive", artist: "Perch Radio", app: "Spotify", playing: true, position: pos, duration: 215 });
-    w.setSys({ battery: 76, charging: false, cpu: 12 + Math.round(Math.random() * 20), ram: 58, volume: vol, muted: false, camera: [], mic: [] });
+    w.setSys({ battery: 76, charging: false, cpu: 12 + Math.round(Math.random() * 20), ram: 58, volume: vol, muted: false, camera: cam ? ["Zoom"] : [], mic: mic ? ["Zoom"] : [] });
   }, 1000);
   setInterval(() => w.setLevel(Math.random() * 0.6), 66);
-  (window as unknown as { perch: unknown }).perch = { island, store, volume: (v: number) => (vol = v) };
+  (window as unknown as { perch: unknown }).perch = { island, store, volume: (v: number) => (vol = v),
+    privacy: (c: boolean, m: boolean) => { cam = c; mic = m; } };
   island.onSettings = () => window.open("/settings.html", "_blank");
   island.onCodeMode = (on) => {
     token.stop = true;

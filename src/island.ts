@@ -7,12 +7,13 @@ import { TABS, Widgets, type Invoke, type Tab } from "./widgets";
 import { icon } from "./icons";
 import { glide } from "./motion";
 
-type Mode = "hidden" | "peek" | "compact" | "expanded";
+type Mode = "hidden" | "peek" | "mini" | "compact" | "expanded";
 type View = "overview" | "empty" | "widget" | "approval" | "question" | "finished" | "diff" | "confused";
 
 const COUNTDOWN_MS = 10_000;
 const MASCOT = 96; // canvas CSS size; positions below scale it down
-const W = { hidden: 200, peek: 200, compact: 280, expanded: 640 };
+const W = { hidden: 200, peek: 200, mini: 60, compact: 280, expanded: 640 };
+const DOUBLE_TAP_MS = 260;
 const BAR_H = 30;
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -51,6 +52,8 @@ export class Island {
   private autoCloseMs = 60_000;
   private awayMs = 3 * 60_000;
   private lastMove = Date.now();
+  private tucked = false;
+  private tapTimer = 0;
   private tab: Tab = "home";
   private shownTab: Tab | null = null;
   private pos = "top";
@@ -87,7 +90,9 @@ export class Island {
     this.el.addEventListener("mouseenter", () => this.onEnter());
     this.el.addEventListener("mouseleave", () => this.onLeave());
     this.el.addEventListener("mousemove", () => (this.lastActivity = Date.now()));
-    this.canvas.addEventListener("click", () => this.onMascotClick());
+    // one tap opens (after a beat, so a second tap can arrive); a double tap closes the open island or tucks the bar
+    this.el.addEventListener("click", (e) => this.onTap(e));
+    this.el.addEventListener("dblclick", (e) => this.onDoubleTap(e));
     this.content.addEventListener("click", (e) => this.onAction(e));
     this.content.addEventListener("pointerdown", (e) => {
       const bar = (e.target as HTMLElement).closest<HTMLElement>(".progress");
@@ -197,6 +202,8 @@ export class Island {
     if (this.snap.sessions.some((s) => s.state === "finished")) return ["expanded", "finished"];
     if (this.userOpen) return ["expanded", this.diffStep ? "diff" : this.tab !== "code" ? "widget" : this.snap.sessions.length ? "overview" : "empty"];
     if (this.peeking || this.noteText) return ["peek", "empty"];
+    const anything = this.snap.sessions.length || this.widgets.activity() || this.widgets.privacy();
+    if (this.tucked && anything) return ["mini", "empty"];
     if ((this.snap.sessions.length || this.widgets.activity() || this.widgets.privacy()) && !this.away()) return ["compact", "overview"];
     return ["hidden", "empty"];
   }
@@ -306,7 +313,7 @@ export class Island {
   private layout() {
     const m = this.mode;
     this.el.dataset.mode = m;
-    const width = m === "peek" && this.noteText ? 460 : m === "compact" && this.widgets.activity() && !this.snap.sessions.length ? 340 : W[m];
+    const width = m === "mini" ? W.mini + (this.widgets.privacy() ? 18 : 0) : m === "peek" && this.noteText ? 460 : m === "compact" && this.widgets.activity() && !this.snap.sessions.length ? 340 : W[m];
     this.el.style.width = `${width}px`;
     let h = m === "hidden" ? 0 : BAR_H;
     let mx = 6, my = 3, size = 24;
@@ -350,7 +357,7 @@ export class Island {
 
   private header(left = this.tabs()) {
     return `<div class="header"><div class="tabs" role="tablist">${left}</div>
-      <div class="right">${this.codeMode && this.snap.sessions.length ? `<span>${this.snap.sessions.length} running</span>` : ""}${this.codeSwitch()}
+      <div class="right"><span class="privacy">${this.widgets.privacy()}</span>${this.codeMode && this.snap.sessions.length ? `<span>${this.snap.sessions.length} running</span>` : ""}${this.codeSwitch()}
         <button class="gear" data-act="settings" aria-label="Settings" title="Settings">${icon("gear")}</button></div></div>`;
   }
 
@@ -516,7 +523,11 @@ export class Island {
   }
   private onEnter() {
     clearTimeout(this.leaveTimer);
-    if (this.mode === "compact") this.armOpen(200);
+    if (this.mode === "mini") {
+      clearTimeout(this.hoverTimer);
+      this.hoverTimer = window.setTimeout(() => { this.tucked = false; this.update(); }, 600);
+    }
+    if (this.mode === "compact") this.armOpen(450); // long enough for a double tap to tuck it instead
     if (this.mode === "peek") this.armOpen(650);
   }
   private onLeave() {
@@ -526,6 +537,36 @@ export class Island {
   private armOpen(ms: number) {
     clearTimeout(this.hoverTimer);
     this.hoverTimer = window.setTimeout(() => this.open(), ms);
+  }
+
+  /** Taps on the island itself (not its buttons, fields or the scrubber). */
+  private interactive(e: Event) {
+    return !!(e.target as HTMLElement).closest("button, input, select, a, video, .progress, [data-act]");
+  }
+
+  private onTap(e: MouseEvent) {
+    if (this.interactive(e)) return;
+    if (this.mode === "expanded") {
+      if (e.target === this.canvas) this.onMascotClick();
+      return;
+    }
+    clearTimeout(this.tapTimer);
+    this.tapTimer = window.setTimeout(() => { this.tucked = false; this.open(); }, DOUBLE_TAP_MS);
+  }
+
+  private onDoubleTap(e: MouseEvent) {
+    if (this.interactive(e)) return;
+    clearTimeout(this.tapTimer);
+    clearTimeout(this.hoverTimer);
+    if (this.mode === "expanded") {
+      if (this.snap.alerts.length) return; // an agent is waiting: answering is the only way out
+      this.pokes = [];
+      this.close();
+    } else if (this.mode === "compact") {
+      this.tucked = true; // until the next hover: just Dango and the privacy dots
+      this.update();
+    } else return;
+    play("close");
   }
 
   private onMascotClick() {

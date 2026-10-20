@@ -1,6 +1,6 @@
-//! System widgets on macOS: battery (pmset), CPU/RAM (sysinfo), volume (AppleScript). Same `sys` event as Windows.
-//! Camera/mic indicators stay empty: macOS already shows its own green/orange dots, and detecting them needs
-//! CoreMediaIO/Core Audio listeners. No `level` events either (capturing system audio needs screen-recording
+//! System widgets on macOS: battery (pmset), CPU/RAM (sysinfo), volume (AppleScript), and whether the camera or mic
+//! is on (CoreMediaIO / Core Audio "running somewhere"). Same `sys` event as Windows. macOS doesn't say which app is
+//! using them, so the names stay blank. No `level` events (capturing system audio needs screen-recording
 //! permission), so the waveform falls back to an animated one.
 use serde::Serialize;
 use std::process::Command;
@@ -30,6 +30,66 @@ fn run(cmd: &str, args: &[&str]) -> Option<String> {
 pub fn parse_pmset(s: &str) -> Option<(u8, bool)> {
     let pct = s.split('%').next()?.rsplit(|c: char| !c.is_ascii_digit()).next()?.parse().ok()?;
     Some((pct, s.contains("AC Power")))
+}
+
+// ---- camera / mic in use ----
+
+#[repr(C)]
+struct PropertyAddress { selector: u32, scope: u32, element: u32 }
+
+const fn fourcc(s: &[u8; 4]) -> u32 {
+    (s[0] as u32) << 24 | (s[1] as u32) << 16 | (s[2] as u32) << 8 | s[3] as u32
+}
+const SYSTEM_OBJECT: u32 = 1;
+const GLOBAL: u32 = fourcc(b"glob");
+const RUNNING_SOMEWHERE: u32 = fourcc(b"gone"); // same selector in Core Audio and CoreMediaIO
+
+#[link(name = "CoreAudio", kind = "framework")]
+extern "C" {
+    fn AudioObjectGetPropertyData(id: u32, addr: *const PropertyAddress, qsize: u32, qdata: *const std::ffi::c_void,
+        size: *mut u32, data: *mut std::ffi::c_void) -> i32;
+}
+
+#[link(name = "CoreMediaIO", kind = "framework")]
+extern "C" {
+    fn CMIOObjectGetPropertyDataSize(id: u32, addr: *const PropertyAddress, qsize: u32, qdata: *const std::ffi::c_void, size: *mut u32) -> i32;
+    fn CMIOObjectGetPropertyData(id: u32, addr: *const PropertyAddress, qsize: u32, qdata: *const std::ffi::c_void,
+        size: u32, used: *mut u32, data: *mut std::ffi::c_void) -> i32;
+}
+
+/// Is the default microphone being recorded from by any app?
+fn mic_on() -> bool {
+    unsafe {
+        let (mut dev, mut size) = (0u32, 4u32);
+        let addr = PropertyAddress { selector: fourcc(b"dIn "), scope: GLOBAL, element: 0 };
+        if AudioObjectGetPropertyData(SYSTEM_OBJECT, &addr, 0, std::ptr::null(), &mut size, &mut dev as *mut u32 as _) != 0 || dev == 0 {
+            return false;
+        }
+        let (mut on, mut size) = (0u32, 4u32);
+        let addr = PropertyAddress { selector: RUNNING_SOMEWHERE, scope: GLOBAL, element: 0 };
+        AudioObjectGetPropertyData(dev, &addr, 0, std::ptr::null(), &mut size, &mut on as *mut u32 as _) == 0 && on != 0
+    }
+}
+
+/// Is any camera streaming to any app?
+fn camera_on() -> bool {
+    unsafe {
+        let devices = PropertyAddress { selector: fourcc(b"dev#"), scope: GLOBAL, element: 0 };
+        let mut size = 0u32;
+        if CMIOObjectGetPropertyDataSize(SYSTEM_OBJECT, &devices, 0, std::ptr::null(), &mut size) != 0 || size == 0 {
+            return false;
+        }
+        let mut ids = vec![0u32; size as usize / 4];
+        let mut used = 0u32;
+        if CMIOObjectGetPropertyData(SYSTEM_OBJECT, &devices, 0, std::ptr::null(), size, &mut used, ids.as_mut_ptr() as _) != 0 {
+            return false;
+        }
+        let running = PropertyAddress { selector: RUNNING_SOMEWHERE, scope: GLOBAL, element: 0 };
+        ids.iter().any(|&id| {
+            let mut on = 0u32;
+            CMIOObjectGetPropertyData(id, &running, 0, std::ptr::null(), 4, &mut used, &mut on as *mut u32 as _) == 0 && on != 0
+        })
+    }
 }
 
 fn volume() -> (u8, bool) {
@@ -62,8 +122,9 @@ pub fn watch(app: AppHandle) {
                 volume,
                 muted,
                 brightness: None,
-                camera: vec![],
-                mic: vec![],
+                // blank name: macOS doesn't tell other apps who is using the camera or mic
+                camera: if camera_on() { vec![String::new()] } else { vec![] },
+                mic: if mic_on() { vec![String::new()] } else { vec![] },
             };
             if last.as_ref() != Some(&s) {
                 let _ = app.emit("sys", &s);
