@@ -104,13 +104,6 @@ export class Dango {
     const cx = S / 2 + shakeX, cy = S * 0.56 + bob;
     const stateColor = this.tint ?? css(`--c-state-${this.state}`);
 
-    // glow
-    const g = ctx.createRadialGradient(cx, cy, R * 0.4, cx, cy, R * 1.6);
-    g.addColorStop(0, hexA(stateColor, this.state === "idle" ? 0.12 : 0.35));
-    g.addColorStop(1, hexA(stateColor, 0));
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, S, S);
-
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(rot);

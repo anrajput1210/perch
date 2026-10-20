@@ -1,9 +1,13 @@
 // The settings window: sections in a sidebar, every change saved the moment it's made.
 // Opened from the island's gear button or the tray. In a plain browser it runs on sample data (for design work).
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import "./ui.css";
 import "./island.css"; // the Code mode switch
 import { configureSound, play } from "./sound";
 import { upcoming } from "./ics";
+import { icon } from "./icons";
+import { glide, installSpring } from "./motion";
 
 type Settings = { sound: boolean; volume: number; auto_close_s: number; away_min: number; start_with_windows: boolean; code_mode: boolean;
   position: string; monitor: number; theme: string; opacity: number; scale: number; calendar_url: string };
@@ -21,6 +25,7 @@ const invoke = inTauri ? (await import("@tauri-apps/api/core")).invoke
         { id: "gemini", name: "Gemini CLI", connected: false, config: "~/.gemini/settings.json" }],
     } as Record<string, unknown>)[cmd] as T;
 
+installSpring();
 const isMac = navigator.userAgent.includes("Mac");
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 const app = document.getElementById("app")!;
@@ -31,11 +36,11 @@ let monitors: string[] = [];
 let calNote = "";
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
-  { id: "general", label: "General", icon: "⚙" },
-  { id: "look", label: "Appearance", icon: "◐" },
-  { id: "agents", label: "Agents", icon: "&lt;/&gt;" },
-  { id: "calendar", label: "Calendar", icon: "▦" },
-  { id: "about", label: "About", icon: "ⓘ" },
+  { id: "general", label: "General", icon: icon("gear") },
+  { id: "look", label: "Appearance", icon: icon("palette") },
+  { id: "agents", label: "Agents", icon: icon("code") },
+  { id: "calendar", label: "Calendar", icon: icon("calendar") },
+  { id: "about", label: "About", icon: icon("info") },
 ];
 
 // ---- controls ----
@@ -139,6 +144,9 @@ function render() {
         ${SECTIONS.map((x) => `<button role="tab" aria-selected="${x.id === section}" data-section="${x.id}"><span class="ico" aria-hidden="true">${x.icon}</span>${x.label}</button>`).join("")}
       </nav>
       <div class="set-page" role="tabpanel"><h1 class="title">${SECTIONS.find((x) => x.id === section)!.label}</h1>${page}</div></div>`;
+  // highlights slide from the old choice to the new one, even though the page was just rebuilt
+  glide(app.querySelector(".set-nav"), "nav");
+  app.querySelectorAll<HTMLElement>(".seg, .picks").forEach((g) => glide(g, g.getAttribute("aria-label") ?? ""));
 }
 
 // outside #app so re-renders don't wipe it

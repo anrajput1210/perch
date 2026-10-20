@@ -32,8 +32,8 @@
   --c-mascot-ink: #2a1e19;
   --c-mascot-blush: #ff9eae;
   --c-mascot-sprout: #7ed48a;
-  --font-sans: Inter, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  --font-sans: 'Geist Variable', 'Segoe UI Variable Text', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'Cascadia Code', Consolas, monospace;
   --fs-xs: 11px;
   --lh-xs: 14px;
   --fw-xs: 500;

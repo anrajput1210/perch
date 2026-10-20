@@ -43,13 +43,13 @@
 .auto-press { transform: scale(.94); filter: brightness(1.3); }
 .countdown { z-index: 3; }
 
-/* Browser preview only: a stand-in desktop. */
-body.preview { min-height: 100vh;
-  background: radial-gradient(1200px 600px at 20% 110%, #3b2a6b 0%, transparent 60%),
-              radial-gradient(900px 500px at 90% 0%, #123a5a 0%, transparent 55%), #0d0f17; }
+/* Browser preview only: a stand-in desktop on the light warm-gray canvas. */
+body.preview { min-height: 100vh; background: #e9e7e2; color: #111; }
 .preview-panel { position: fixed; left: 50%; bottom: var(--sp-10); translate: -50% 0; width: min(560px, calc(100vw - 32px));
-  background: color-mix(in srgb, var(--c-surface) 85%, transparent); border: 1px solid var(--c-border);
-  border-radius: var(--r-lg); padding: var(--sp-7); backdrop-filter: blur(12px); }
+  background: #fff; color: #111; border-radius: var(--r-lg); padding: var(--sp-7); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.preview-panel .faint { color: #6b6d72; }
+.preview-panel .btn { background: #eceae6; color: #111; }
+.preview-panel .btn.primary { background: #111; color: #fff; }
 .preview-panel p { margin: 0 0 var(--sp-4); }
 
 /* Now playing */
@@ -62,50 +62,38 @@ body.preview { min-height: 100vh;
 .media-time { font-variant-numeric: tabular-nums; }
 .media-controls .btn { min-width: 40px; justify-content: center; }
 
-/* Code mode switch: a tiny terminal. Off: dim </> chip on a dark track. On: the knob slides over and becomes a
-   live prompt (> plus a blinking caret), the track lights up phosphor green with scanlines, and CODE types itself in. */
-.code-switch { --on: var(--c-state-finished); appearance: none; border: 0; background: none; padding: 0; cursor: pointer;
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .12em; }
-.cs-track { position: relative; display: block; width: 78px; height: 24px; border-radius: 7px;
-  background: var(--c-surface-2); box-shadow: inset 0 0 0 1px rgba(255,255,255,.07);
-  transition: background var(--m-base), box-shadow var(--m-base); overflow: hidden; }
-.cs-track::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity var(--m-base);
-  background: repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 3px); }
-.cs-word, .cs-off { position: absolute; top: 0; line-height: 24px; transition: opacity var(--m-fast); }
-.cs-word { left: 9px; color: var(--on); text-shadow: 0 0 6px var(--on); opacity: 0; }
+/* Code mode switch: a tiny terminal, black and white. Off: a quiet </> chip. On: the knob springs across and
+   turns into a live prompt (> plus a blinking caret) on an inverted track, and CODE types itself in. */
+.code-switch { appearance: none; border: 0; background: none; padding: 0; cursor: pointer;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; }
+.cs-track { position: relative; display: block; width: 78px; height: 24px; border-radius: 7px; overflow: hidden;
+  background: var(--c-surface-2); box-shadow: inset 0 0 0 1px var(--c-surface-hover);
+  transition: background-color var(--spring-ms) var(--spring), box-shadow var(--spring-ms) var(--spring); }
+.cs-word, .cs-off { position: absolute; top: 0; line-height: 24px; transition: opacity 120ms; }
+.cs-word { left: 9px; color: var(--c-bg); opacity: 0; }
 .cs-off { right: 10px; color: var(--c-text-faint); letter-spacing: .06em; font-weight: 500; }
 .cs-knob { position: absolute; top: 3px; left: 3px; width: 32px; height: 18px; border-radius: 5px; display: grid; place-items: center;
-  background: #2b2e35; box-shadow: 0 1px 2px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
-  transition: transform 420ms cubic-bezier(.3,1.5,.5,1), background var(--m-base), box-shadow var(--m-base); }
-.cs-tag, .cs-prompt { grid-area: 1 / 1; transition: opacity var(--m-fast), transform var(--m-base) var(--m-ease-out); }
-.cs-tag { color: var(--c-text-muted); letter-spacing: 0; }
-.cs-prompt { color: var(--on); display: flex; align-items: center; gap: 2px; opacity: 0; transform: scale(.6); }
-.cs-prompt i { width: 5px; height: 9px; background: var(--on); box-shadow: 0 0 5px var(--on); animation: cs-blink 1s steps(1) infinite; }
-
-.code-switch[aria-checked="true"] .cs-track { background: #06120d;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--on) 55%, transparent), 0 0 14px color-mix(in srgb, var(--on) 30%, transparent); }
-.code-switch[aria-checked="true"] .cs-track::after { opacity: 1; }
+  background: var(--c-surface-hover); color: var(--c-text-muted);
+  transition: transform var(--spring-ms) var(--spring), background-color var(--spring-ms) var(--spring), color var(--spring-ms) var(--spring); }
+.cs-tag, .cs-prompt { grid-area: 1 / 1; transition: opacity 120ms, filter 160ms; }
+.cs-tag { letter-spacing: 0; }
+.cs-prompt { display: flex; align-items: center; gap: 2px; opacity: 0; filter: blur(3px); }
+.cs-prompt i { width: 5px; height: 9px; background: currentColor; animation: cs-blink 1s steps(1) infinite; }
+.code-switch[aria-checked="true"] .cs-track { background: var(--c-text); box-shadow: none; }
 .code-switch[aria-checked="true"] .cs-word { opacity: 1; }
 .code-switch[aria-checked="true"] .cs-off { opacity: 0; }
-.code-switch[aria-checked="true"] .cs-knob { transform: translateX(40px); background: #0b1f16;
-  box-shadow: inset 0 0 0 1px var(--on), 0 0 8px color-mix(in srgb, var(--on) 45%, transparent); }
-.code-switch[aria-checked="true"] .cs-tag { opacity: 0; transform: scale(.6); }
-.code-switch[aria-checked="true"] .cs-prompt { opacity: 1; transform: none; }
-.code-switch:hover .cs-knob { filter: brightness(1.15); }
+.code-switch[aria-checked="true"] .cs-knob { transform: translateX(40px); background: var(--c-bg); color: var(--c-text); }
+.code-switch[aria-checked="true"] .cs-tag { opacity: 0; filter: blur(3px); }
+.code-switch[aria-checked="true"] .cs-prompt { opacity: 1; filter: none; }
 .code-switch:active .cs-knob { width: 36px; }
-
-/* only on a real flip: CODE types in letter by letter and the track flickers on like a CRT */
-.code-switch.flipping[aria-checked="true"] .cs-word { animation: cs-type 380ms steps(4, end) 120ms both; }
-.code-switch.flipping[aria-checked="true"] .cs-track { animation: cs-crt 420ms ease-out; }
-.code-switch.flipping[aria-checked="false"] .cs-track { animation: cs-off 300ms ease-in; }
+.code-switch.flipping[aria-checked="true"] .cs-word { animation: cs-type 300ms steps(4, end) 80ms both; }
 @keyframes cs-blink { 50% { opacity: 0; } }
 @keyframes cs-type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
-@keyframes cs-crt { 0% { filter: brightness(2.2) saturate(.3); } 30% { filter: brightness(.7); } 55% { filter: brightness(1.4); } 100% { filter: none; } }
-@keyframes cs-off { 0% { filter: brightness(1.6); transform: scaleY(1); } 60% { transform: scaleY(.25); filter: brightness(2); } 100% { transform: none; filter: none; } }
 @media (prefers-reduced-motion: reduce) {
   .cs-knob, .cs-tag, .cs-prompt { transition: none; }
-  .code-switch.flipping .cs-track, .code-switch.flipping .cs-word, .cs-prompt i { animation: none; }
+  .code-switch.flipping .cs-word, .cs-prompt i { animation: none; }
 }
+
 
 /* ---- placement and size (settings) ---- */
 .island { transform: scale(var(--scale, 1)); transform-origin: top center; }
@@ -200,7 +188,8 @@ body.preview { min-height: 100vh;
 
 /* clipboard */
 .seg .tab { padding: var(--sp-2) var(--sp-5); border-radius: var(--r-pill); color: var(--c-text-faint); }
-.seg .tab.on { background: var(--c-surface-2); color: var(--c-text); }
+.seg .tab.on { color: var(--c-text); }
+.island .seg { background: none; padding: 0; }
 
 /* mirror */
 .mirror { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--r-md); background: #000; object-fit: cover; transform: scaleX(-1); }
@@ -224,3 +213,58 @@ body.preview { min-height: 100vh;
 .gear { appearance: none; border: 0; background: none; color: var(--c-text-faint); cursor: pointer; width: 28px; height: 26px;
   display: grid; place-items: center; border-radius: var(--r-pill); transition: color var(--m-fast), background var(--m-fast), transform var(--m-base) var(--m-ease-out); }
 .gear:hover { color: var(--c-text); background: var(--c-surface-2); transform: rotate(45deg); }
+
+/* ==== Motion language ====
+   One shape, never cut: the island morphs size, radius and colour on one spring (--spring from motion.ts, ~1%
+   overshoot); content swaps with a short blur, no waiting. Black and white only: no glows, no gradients on chrome. */
+:root { --spring: cubic-bezier(.2, .9, .25, 1); --spring-ms: 520ms; } /* replaced by motion.ts at startup */
+.island { transition: width var(--spring-ms) var(--spring), height var(--spring-ms) var(--spring),
+  border-radius var(--spring-ms) var(--spring), background-color var(--spring-ms) var(--spring), color var(--spring-ms) var(--spring); }
+.island[data-closing] { transition-duration: var(--spring-ms); transition-timing-function: var(--spring); }
+.island .dango { transition: transform var(--spring-ms) var(--spring); }
+.island[data-ink="light"] { --c-bg: #f7f6f3; --c-surface: #ffffff; --c-surface-2: #ecebe7; --c-surface-hover: #e1dfda;
+  --c-text: #0c0c0d; --c-text-muted: #55585e; --c-text-faint: #7b7e84; --c-accent: #0c0c0d; --c-on-accent: #ffffff;
+  --c-danger: #c4323d; --shadow-card: 0 0 0 1px rgba(0,0,0,.06); }
+.island .card, .island .btn, .island .code, .island .icon-tab, .island .chip, .island .event, .island .input {
+  transition: background-color var(--spring-ms) var(--spring), color var(--spring-ms) var(--spring), box-shadow var(--spring-ms) var(--spring),
+    transform var(--spring-ms) var(--spring); }
+.btn:active { transform: scale(.96); }
+.btn .ic { flex: none; }
+
+/* content swap: out in 90 ms, in over 180 ms, both a short blur */
+.content { transition: opacity 180ms ease-out, filter 180ms ease-out; }
+.content.leaving { opacity: 0; filter: blur(5px); transform: none; transition-duration: 90ms; transition-delay: 0ms; }
+.content.entering { opacity: 0; filter: blur(5px); transform: none; transition: none; }
+.island:not([data-mode="expanded"]) .content { transition-duration: 90ms; }
+.bar { transition: opacity 120ms ease-out, filter 120ms ease-out; }
+.island[data-mode="expanded"] .bar { filter: blur(4px); }
+
+/* sliding highlight (motion.ts glide) */
+.tabs, .seg, .set-nav, .picks { position: relative; }
+.ink { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; border-radius: var(--r-pill); background: var(--c-surface-2);
+  transition: transform var(--spring-ms) var(--spring), width var(--spring-ms) var(--spring), height var(--spring-ms) var(--spring), opacity 120ms; }
+.tabs > :not(.ink), .seg > :not(.ink), .set-nav > :not(.ink), .picks > :not(.ink) { position: relative; z-index: 1; }
+.icon-tab.on, .icon-tab:hover { background: transparent; }
+.icon-tab.on span { animation: label-in 220ms ease-out; }
+@keyframes label-in { from { opacity: 0; filter: blur(4px); } }
+
+/* black and white: no tints, glows or gradients on chrome */
+.card[data-tone]::before { display: none; }
+.wave i { background: currentColor; opacity: .85; }
+.progress { background: var(--c-surface-2); }
+.progress i { background: var(--c-text); }
+.eq i { background: currentColor; }
+.priv.cam, .priv.mic { box-shadow: none; }
+.meter-track i { background: var(--c-text); }
+.ring .ring-fill, .card[data-tone="finished"] .ring-fill { stroke: var(--c-text); }
+.event.soon { box-shadow: inset 2px 0 0 var(--c-text); }
+.bar-ring { width: 14px; height: 14px; background: none; transform: rotate(-90deg); }
+.bar-ring circle { fill: none; stroke: var(--c-surface-hover); stroke-width: 3; }
+.bar-ring .fill { stroke: var(--c-text); stroke-dasharray: 100; transition: stroke-dashoffset 1s linear; }
+.bar-dot.meet { background: var(--c-text); }
+.media-art.none, .mini-media .note { color: var(--c-text-faint); }
+.gear:hover { transform: rotate(30deg); transition: transform var(--spring-ms) var(--spring), color 120ms, background-color 120ms; }
+.progress { touch-action: none; }
+.progress.scrubbing i { transition: none; }
+.wave { justify-content: space-between; gap: 0; }
+.wave i { flex: none; width: 3px; border-radius: 1.5px; }

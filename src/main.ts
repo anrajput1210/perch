@@ -1,4 +1,8 @@
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import "./ui.css";
+import { installSpring } from "./motion";
+installSpring();
 import "./island.css";
 import { Store } from "./store";
 import { Island } from "./island";

@@ -4,8 +4,12 @@
   "version": "0.0.1",
   "type": "module",
   "description": "A dynamic island for Windows and macOS: coding agents, music, timers, shelf, clipboard and more.",
-  "bin": { "perch": "installer/install.mjs" },
-  "files": ["installer"],
+  "bin": {
+    "perch": "installer/install.mjs"
+  },
+  "files": [
+    "installer"
+  ],
   "scripts": {
     "tokens": "node scripts/tokens.mjs",
     "predev": "node scripts/tokens.mjs",
@@ -22,6 +26,8 @@
     "vite": "^6.0.7"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@tauri-apps/api": "^2.12.4"
   }
 }

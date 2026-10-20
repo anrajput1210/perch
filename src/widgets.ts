@@ -3,6 +3,7 @@
 // The Island owns modes and layout; this owns the widgets' state, their HTML, and their buttons.
 import { play } from "./sound";
 import { upcoming, type CalEvent } from "./ics";
+import { icon } from "./icons";
 
 export type Tab = "home" | "code" | "media" | "timer" | "shelf" | "clip" | "cam" | "system";
 export type Invoke = <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -19,16 +20,15 @@ export interface Activity { label: string; lead?: string }
 type Timer = { label: string; total: number; endsAt: number; left?: number; phase?: "focus" | "break" | "long"; round?: number };
 type ShelfItem = { path: string; name: string };
 
-const svg = (d: string) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 export const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: "home", label: "Home", icon: svg('<path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z"/>') },
-  { id: "code", label: "Code", icon: svg('<path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/>') },
-  { id: "media", label: "Now playing", icon: svg('<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>') },
-  { id: "timer", label: "Timer", icon: svg('<circle cx="12" cy="13" r="7"/><path d="M12 9v4l2.5 2M10 3h4"/>') },
-  { id: "shelf", label: "Shelf", icon: svg('<path d="M4 13l2-7h12l2 7v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 13h5l1 2h4l1-2h5"/>') },
-  { id: "clip", label: "Clipboard", icon: svg('<rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5V4h6v1M9 11h6M9 15h4"/>') },
-  { id: "cam", label: "Mirror", icon: svg('<rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3"/>') },
-  { id: "system", label: "System", icon: svg('<path d="M5 6h14M5 12h14M5 18h14"/><circle cx="9" cy="6" r="1.8"/><circle cx="15" cy="12" r="1.8"/><circle cx="8" cy="18" r="1.8"/>') },
+  { id: "home", label: "Home", icon: icon("home") },
+  { id: "code", label: "Code", icon: icon("code") },
+  { id: "media", label: "Now playing", icon: icon("music") },
+  { id: "timer", label: "Timer", icon: icon("timer") },
+  { id: "shelf", label: "Shelf", icon: icon("shelf") },
+  { id: "clip", label: "Clipboard", icon: icon("clip") },
+  { id: "cam", label: "Mirror", icon: icon("camera") },
+  { id: "system", label: "System", icon: icon("sliders") },
 ];
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -37,7 +37,7 @@ const hms = (ms: number) => { const s = Math.ceil(ms / 1000); return s >= 3600 ?
 const time = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const compact = (n: number) => Intl.NumberFormat([], { notation: "compact", maximumFractionDigits: 1 }).format(n);
 const isMac = navigator.userAgent.includes("Mac");
-const BARS = 28;
+const BARS = 48;
 const POMODORO = { focus: 25, break: 5, long: 15, rounds: 4 };
 const OWN_APP = /^perch$/i; // the mirror uses the camera too; don't flag ourselves
 
@@ -203,14 +203,15 @@ export class Widgets {
     const now = Date.now();
     const s = this.sys;
     if (this.hud && s) {
-      const [icon, v, label] = this.hud.kind === "brightness" ? ["☀", s.brightness ?? 0, `${s.brightness}%`]
-        : [s.muted ? "🔇" : "🔊", s.muted ? 0 : s.volume, s.muted ? "Muted" : `${s.volume}%`];
-      return { label, lead: `<span class="hud-icon" aria-hidden="true">${icon}</span><span class="hud-meter"><i style="width:${v}%"></i></span>` };
+      const [glyph, v, label] = this.hud.kind === "brightness" ? [icon("sun", 14), s.brightness ?? 0, `${s.brightness}%`]
+        : [icon(s.muted ? "mute" : "volume", 14), s.muted ? 0 : s.volume, s.muted ? "Muted" : `${s.volume}%`];
+      return { label, lead: `${glyph}<span class="hud-meter"><i style="width:${v}%"></i></span>` };
     }
     const t = this.timer;
     if (t) {
       const left = t.left ?? Math.max(0, t.endsAt - now);
-      return { label: `${hms(left)} · ${t.label}${t.left ? " (paused)" : ""}`, lead: `<span class="bar-ring" style="--p:${1 - left / t.total}"></span>` };
+      return { label: `${hms(left)} · ${t.label}${t.left ? " (paused)" : ""}`,
+        lead: `<svg class="bar-ring" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><circle class="fill" cx="8" cy="8" r="6" pathLength="100" style="stroke-dashoffset:${100 * (1 - left / t.total)}"/></svg>` };
     }
     const next = this.events[0];
     if (next && +next.start - now < 10 * 60_000) {
@@ -275,11 +276,11 @@ export class Widgets {
       : next || `<p class="faint">${this.calUrl ? "No more meetings today." : "Add your calendar's iCal link in Settings to get meeting alerts."}</p>`;
     const m = this.media;
     const playing = m ? `<button class="mini-media" data-act="w-tab" data-tab="media">
-        ${this.artUrl ? `<img src="${esc(this.artUrl)}" alt="">` : `<span class="note" aria-hidden="true">♪</span>`}
+        ${this.artUrl ? `<img src="${esc(this.artUrl)}" alt="">` : `<span class="note">${icon("music")}</span>`}
         <span class="clamp1">${esc(m.title || "Unknown")}<span class="faint"> · ${esc(m.artist || m.app)}</span></span></button>` : "";
     const s = this.sys;
     const chips = s ? `<div class="chips">
-        ${s.battery != null ? `<span class="chip">${s.charging ? "⚡" : ""}${s.battery}%</span>` : ""}
+        ${s.battery != null ? `<span class="chip">${s.charging ? icon("bolt", 12) : ""}${s.battery}%</span>` : ""}
         <span class="chip">CPU <b class="live-cpu">${s.cpu}%</b></span><span class="chip">RAM <b class="live-ram">${s.ram}%</b></span></div>` : "";
     return `<div class="card row home"><div class="slot"></div>
       <div class="home-clock"><b class="live-clock">${time(now)}</b>
@@ -291,7 +292,7 @@ export class Widgets {
     const m = this.media;
     if (!m) return `<div class="card row"><div class="slot"></div><div class="col"><p class="title">Nothing playing</p>
       <p class="muted">Play something in ${isMac ? "Spotify or Music" : "any app (Spotify, a browser, Media Player)"} and it shows up here.</p></div></div>`;
-    const art = this.artUrl ? `<img class="media-art" src="${esc(this.artUrl)}" alt="">` : `<div class="media-art none" aria-hidden="true">♪</div>`;
+    const art = this.artUrl ? `<img class="media-art" src="${esc(this.artUrl)}" alt="">` : `<div class="media-art none">${icon("music", 28)}</div>`;
     const timeline = m.duration > 0
       ? `<div class="progress" data-act="w-seek" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="${Math.round(m.duration)}" aria-valuenow="${Math.round(m.position)}" tabindex="0"><i style="width:${Math.min(100, (m.position / m.duration) * 100)}%"></i></div>
          <span class="faint media-time"></span>` : "";
@@ -300,9 +301,9 @@ export class Widgets {
       <div class="wave" aria-hidden="true">${"<i></i>".repeat(BARS)}</div>
       ${timeline}
       <div class="row media-controls">
-        <button class="btn ghost" data-act="w-media" data-cmd="prev" aria-label="Previous">⏮</button>
-        <button class="btn primary" data-act="w-media" data-cmd="toggle" data-autofocus aria-label="${m.playing ? "Pause" : "Play"}">${m.playing ? "⏸" : "▶"}</button>
-        <button class="btn ghost" data-act="w-media" data-cmd="next" aria-label="Next">⏭</button></div>
+        <button class="btn ghost" data-act="w-media" data-cmd="prev" aria-label="Previous">${icon("prev")}</button>
+        <button class="btn primary" data-act="w-media" data-cmd="toggle" data-autofocus aria-label="${m.playing ? "Pause" : "Play"}">${icon(m.playing ? "pause" : "play")}</button>
+        <button class="btn ghost" data-act="w-media" data-cmd="next" aria-label="Next">${icon("next")}</button></div>
     </div></div>`;
   }
 
@@ -332,9 +333,9 @@ export class Widgets {
       const dir = f.path.slice(0, f.path.length - f.name.length).replace(/[\\/]$/, "");
       return `<li class="shelf-item"><span class="file-ext" aria-hidden="true">${esc((f.name.split(".").pop() ?? "").slice(0, 4).toUpperCase())}</span>
         <button class="linkish" data-act="w-open" data-i="${i}" title="Open ${esc(f.path)}"><span class="clamp1">${esc(f.name)}</span><span class="faint clamp1">${esc(dir)}</span></button>
-        <button class="btn ghost sm" data-act="w-reveal" data-i="${i}" aria-label="Show ${esc(f.name)} in its folder">Show</button>
-        <button class="btn ghost sm" data-act="w-share" data-i="${i}" aria-label="Share ${esc(f.name)}">${isMac ? "AirDrop" : "Share"}</button>
-        <button class="btn ghost sm" data-act="w-unshelf" data-i="${i}" aria-label="Remove ${esc(f.name)} from the shelf">✕</button></li>`;
+        <button class="btn ghost sm" data-act="w-reveal" data-i="${i}" aria-label="Show ${esc(f.name)} in its folder">${icon("folder")}</button>
+        <button class="btn ghost sm" data-act="w-share" data-i="${i}" aria-label="${isMac ? "AirDrop" : "Share"} ${esc(f.name)}">${icon("share")}</button>
+        <button class="btn ghost sm" data-act="w-unshelf" data-i="${i}" aria-label="Remove ${esc(f.name)} from the shelf">${icon("x")}</button></li>`;
     }).join("");
     return `<div class="card shelf">${items ? `<ul class="list">${items}</ul>
         <div class="row"><span class="faint">Drop more files on the island to park them here.</span><span class="spacer"></span>
@@ -348,8 +349,8 @@ export class Widgets {
     const items = list.map((c, i) => `<li class="clip-item"><button class="linkish" data-act="w-copy" data-i="${i}" title="Copy">
         <span class="clamp1">${esc(c.replace(/\s+/g, " ").slice(0, 200))}</span></button>
         ${this.clipView === "recent"
-          ? `<button class="btn ghost sm" data-act="w-pin" data-i="${i}" aria-label="${this.snippets.includes(c) ? "Remove from snippets" : "Save as snippet"}">${this.snippets.includes(c) ? "★" : "☆"}</button>`
-          : `<button class="btn ghost sm" data-act="w-unpin" data-i="${i}" aria-label="Delete snippet">✕</button>`}</li>`).join("");
+          ? `<button class="btn ghost sm" data-act="w-pin" data-i="${i}" aria-label="${this.snippets.includes(c) ? "Remove from snippets" : "Save as snippet"}">${icon(this.snippets.includes(c) ? "starOn" : "star")}</button>`
+          : `<button class="btn ghost sm" data-act="w-unpin" data-i="${i}" aria-label="Delete snippet">${icon("x")}</button>`}</li>`).join("");
     const empty = this.clipView === "recent" ? "Copy some text and it shows up here. Passwords from password managers are skipped." : "Star a copy, or add a snippet below.";
     return `<div class="card clip"><div class="row seg" role="tablist">
         <button class="tab ${this.clipView === "recent" ? "on" : ""}" role="tab" aria-selected="${this.clipView === "recent"}" data-act="w-clipview" data-v="recent">Recent</button>
@@ -372,13 +373,13 @@ export class Widgets {
       `<div class="meter"><span>${label}</span><span class="meter-track"><i class="${cls}" style="width:${v}%"></i></span><b class="${cls}-n">${v}%</b></div>`;
     const priv = [...s.camera.map((a) => `Camera · ${a}`), ...s.mic.map((a) => `Microphone · ${a}`)];
     return `<div class="card system"><div class="col">
-      <div class="slider-row"><button class="btn ghost sm" data-act="w-mute" aria-label="${s.muted ? "Unmute" : "Mute"}">${s.muted ? "🔇" : "🔊"}</button>
+      <div class="slider-row"><button class="btn ghost sm" data-act="w-mute" aria-label="${s.muted ? "Unmute" : "Mute"}">${icon(s.muted ? "mute" : "volume")}</button>
         <input type="range" min="0" max="100" value="${s.volume}" data-field="volume" aria-label="Volume"><b>${s.volume}%</b></div>
-      ${s.brightness != null ? `<div class="slider-row"><span class="sun" aria-hidden="true">☀</span>
+      ${s.brightness != null ? `<div class="slider-row"><span class="sun">${icon("sun")}</span>
         <input type="range" min="0" max="100" value="${s.brightness}" data-field="brightness" aria-label="Brightness"><b>${s.brightness}%</b></div>`
         : `<p class="faint">${isMac ? "Use the brightness keys; macOS doesn't let apps change it." : "This display's brightness can't be changed by apps (external monitors usually can't)."}</p>`}
     </div><div class="col">
-      ${s.battery != null ? meter(s.charging ? "Battery ⚡" : "Battery", s.battery, "live-bat") : ""}
+      ${s.battery != null ? meter(s.charging ? "Charging" : "Battery", s.battery, "live-bat") : ""}
       ${meter("CPU", s.cpu, "live-cpu-bar")}${meter("RAM", s.ram, "live-ram-bar")}
       <p class="faint">${isMac ? "macOS shows camera and mic use in the menu bar." : priv.length ? `In use: ${esc(priv.join(", "))}` : "Camera and microphone aren't in use."}</p>
     </div></div>`;
@@ -534,15 +535,23 @@ export class Widgets {
     return true;
   }
 
-  /** Click on the progress bar: seek to that point. */
-  seek(el: HTMLElement, clientX: number) {
+  /** Press on the progress bar and drag to scrub; the player jumps there on release. */
+  scrub(el: HTMLElement, down: PointerEvent) {
     const m = this.media;
     if (!m || m.duration <= 0) return;
-    const r = el.getBoundingClientRect();
-    const position = Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * m.duration;
-    this.media = { ...m, position };
-    this.live();
-    this.run(this.invoke?.("media_control", { action: "seek", position }));
+    const at = (x: number) => { const r = el.getBoundingClientRect(); return Math.max(0, Math.min(1, (x - r.left) / r.width)) * m.duration; };
+    const show = (x: number) => { this.media = { ...this.media!, position: at(x) }; this.live(); };
+    el.setPointerCapture(down.pointerId);
+    el.classList.add("scrubbing");
+    show(down.clientX);
+    const move = (e: PointerEvent) => show(e.clientX);
+    const up = (e: PointerEvent) => {
+      el.removeEventListener("pointermove", move);
+      el.classList.remove("scrubbing");
+      this.run(this.invoke?.("media_control", { action: "seek", position: at(e.clientX) }));
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up, { once: true });
   }
 
   /** A slider moved (volume / brightness): applied live while dragging, at most every 50 ms, and on release. */

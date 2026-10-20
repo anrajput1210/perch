@@ -4,6 +4,8 @@ import { Dango, type MascotState } from "./mascot";
 import { play, type SoundName } from "./sound";
 import type { Alert, Session, Snapshot, Step, Store } from "./store";
 import { TABS, Widgets, type Invoke, type Tab } from "./widgets";
+import { icon } from "./icons";
+import { glide } from "./motion";
 
 type Mode = "hidden" | "peek" | "compact" | "expanded";
 type View = "overview" | "empty" | "widget" | "approval" | "question" | "finished" | "diff" | "confused";
@@ -87,6 +89,10 @@ export class Island {
     this.el.addEventListener("mousemove", () => (this.lastActivity = Date.now()));
     this.canvas.addEventListener("click", () => this.onMascotClick());
     this.content.addEventListener("click", (e) => this.onAction(e));
+    this.content.addEventListener("pointerdown", (e) => {
+      const bar = (e.target as HTMLElement).closest<HTMLElement>(".progress");
+      if (bar) this.widgets.scrub(bar, e);
+    });
     this.content.addEventListener("input", (e) => {
       const t = e.target as HTMLInputElement;
       if (t.dataset.act === "other") this.q.other = t.value;
@@ -230,9 +236,12 @@ export class Island {
       view === "widget" ? this.widgets.key(this.tab) : "", this.codeMode, this.tab].join("/");
     if (mode === "expanded" && (key !== this.renderKey || view !== this.view)) {
       const html = this.render(view, focus, alert);
-      if (view !== this.view || this.mode !== "expanded") this.swap(html); else this.content.innerHTML = html;
+      if (view !== this.view || this.mode !== "expanded") this.swap(html);
+      else { this.content.innerHTML = html; this.glideTabs(); }
       this.renderKey = key;
     }
+    // the shape's colour is part of its state: white while an agent is waiting on you, black otherwise
+    this.el.dataset.ink = mode === "expanded" && (view === "approval" || view === "question") ? "light" : "dark";
     if (mode !== this.mode && mode === "expanded") this.dango.showEmote("surprised", 300);
     this.widgets.live();
     this.widgets.attachCam();
@@ -270,6 +279,8 @@ export class Island {
     if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
   }
 
+  /** Content swap: the old content blurs out for 90 ms while the shape is already springing to its new size, then the
+   *  new content blurs in. No pause in between. */
   private swap(html: string) {
     this.content.classList.add("leaving");
     setTimeout(() => {
@@ -280,10 +291,16 @@ export class Island {
       void this.content.offsetWidth;
       this.content.classList.remove("entering");
       this.layout();
+      this.glideTabs();
       this.content.querySelector<HTMLElement>("[data-autofocus]")?.focus({ preventScroll: true });
       this.widgets.live();
       this.widgets.attachCam();
-    }, this.mode === "expanded" ? 140 : 0);
+    }, this.mode === "expanded" ? 90 : 0);
+  }
+
+  private glideTabs() {
+    glide(this.content.querySelector<HTMLElement>(".header .tabs"), "island-tabs");
+    glide(this.content.querySelector<HTMLElement>(".clip .seg"), "clip-view");
   }
 
   private layout() {
@@ -317,6 +334,11 @@ export class Island {
 
   // ---- views ----
 
+  /** Header label for agent moments (approval, question, finished): they belong to Code, so no tab strip. */
+  private codeLabel() {
+    return `<span class="icon-tab on" aria-selected="true">${icon("code")}<span>Code</span></span>`;
+  }
+
   /** Icon tabs; the open one also shows its name. Code only while Code mode is on. */
   private tabs() {
     return TABS.filter((t) => t.id !== "code" || this.codeMode).map((t) => {
@@ -329,9 +351,7 @@ export class Island {
   private header(left = this.tabs()) {
     return `<div class="header"><div class="tabs" role="tablist">${left}</div>
       <div class="right">${this.codeMode && this.snap.sessions.length ? `<span>${this.snap.sessions.length} running</span>` : ""}${this.codeSwitch()}
-        <button class="gear" data-act="settings" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-          stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></div></div>`;
+        <button class="gear" data-act="settings" aria-label="Settings" title="Settings">${icon("gear")}</button></div></div>`;
   }
 
   /** Code mode switch: a tiny terminal. Off it's a dim </> chip; on, the knob becomes a prompt with a blinking
@@ -373,7 +393,7 @@ export class Island {
       case "approval": {
         if (alert?.kind !== "permission") return "";
         const n = this.snap.alerts.length;
-        return `${this.header()}<div class="card row" data-tone="approval"><div class="slot"></div><div class="col">
+        return `${this.header(this.codeLabel())}<div class="card row" data-tone="approval"><div class="slot"></div><div class="col">
           <div><p class="title">${esc(s?.name ?? "An agent")} wants to ${VERB[alert.tool] ?? `use ${esc(alert.tool)}`}</p>
           <span class="faint">${agentName(s?.agent ?? "claude")} · ${esc(alert.tool)}${n > 1 ? ` · 1 of ${n}` : ""}</span></div>
           <div class="code">${esc(alert.detail)}</div>
@@ -391,7 +411,7 @@ export class Island {
             ${q.multiSelect ? `aria-pressed="${picks.includes(o.label)}"` : `role="radio" aria-checked="${picks.includes(o.label)}"`}>
             <span class="kbd">${i + 1}</span> ${esc(o.label)}${o.description ? `<span class="desc">${esc(o.description)}</span>` : ""}</button>`).join("");
         const needsNext = q.multiSelect || qs.length > 1;
-        return `${this.header()}<div class="card row" data-tone="question"><div class="slot"></div><div class="col">
+        return `${this.header(this.codeLabel())}<div class="card row" data-tone="question"><div class="slot"></div><div class="col">
           <p class="title">${esc(q.question)} ${qs.length > 1 ? `<span class="faint">${k + 1}/${qs.length}</span>` : ""}</p>
           <div class="options" role="${q.multiSelect ? "group" : "radiogroup"}" aria-label="${esc(q.question)}">${opts}</div>
           <input class="input" data-act="other" placeholder="Or type your own answer" aria-label="Your own answer" value="${esc(this.q.other)}" />
@@ -400,19 +420,19 @@ export class Island {
         </div></div>`;
       }
       case "finished":
-        return `${this.header()}<div class="card row" data-tone="finished"><div class="slot"></div><div class="col">
+        return `${this.header(this.codeLabel())}<div class="card row" data-tone="finished"><div class="slot"></div><div class="col">
           ${who}<p class="muted clamp">${esc(s?.lastMessage || "Finished.")}</p>
           <div class="row"><span class="spacer"></span><button class="btn primary" data-act="ok">Nice</button></div></div></div>`;
       case "diff": {
         const d = this.diffStep!;
         const lines = (d.diff ?? []).map((l) => `<span class="line ${l.t === "+" ? "add" : l.t === "-" ? "del" : ""}">${esc(l.s) || " "}</span>`).join("");
-        return `${this.header(`<button class="btn ghost" data-act="back" aria-label="Back">← Back</button>`)}
+        return `${this.header(`<button class="btn ghost" data-act="back" aria-label="Back">${icon("back")}Back</button>`)}
           <div class="card"><div class="row"><b>${esc(d.label.replace(/^\w+ /, ""))}</b>
           <span class="add">+${d.added}</span><span class="del">−${d.removed}</span></div>
           <div class="code diff tall">${lines}</div></div>`;
       }
       case "confused":
-        return `${this.header()}<div class="card row" data-tone="dizzy"><div class="slot"></div><div class="col">
+        return `${this.header(this.codeLabel())}<div class="card row" data-tone="dizzy"><div class="slot"></div><div class="col">
           <p class="title">Ow, ow, ow.</p><p class="muted">That's a lot of poking. Give me a few seconds to find my feet.</p></div></div>`;
     }
   }
@@ -457,7 +477,6 @@ export class Island {
     }
     else if (act === "settings") this.onSettings?.();
     else if (act === "tab") { this.tab = b.dataset.tab as Tab; this.update(); }
-    else if (act === "w-seek") this.widgets.seek(b, (e as MouseEvent).clientX);
     else if (act.startsWith("w-")) this.widgets.action(act, b);
     else if (act === "focus") { this.focusId = b.dataset.id!; this.update(); }
     else if (act === "ok") { const s = this.focus(); if (s) this.store.remove(s.id); }
