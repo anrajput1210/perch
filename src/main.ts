@@ -56,6 +56,7 @@ if (invoke) {
     appearance(s);
     island.configure(s);
   };
+  island.onSettings = () => { invoke("open_settings"); };
   island.onCodeMode = (on) => { invoke("set_settings", { settings: { ...settings, code_mode: on } }).catch(() => {}); };
   apply(await invoke<Settings>("get_settings"));
   await listen<Settings>("settings", (e) => apply(e.payload));
@@ -107,6 +108,7 @@ if (invoke) {
   }, 1000);
   setInterval(() => w.setLevel(Math.random() * 0.6), 66);
   (window as unknown as { perch: unknown }).perch = { island, store, volume: (v: number) => (vol = v) };
+  island.onSettings = () => window.open("/settings.html", "_blank");
   island.onCodeMode = (on) => {
     token.stop = true;
     store.reset();

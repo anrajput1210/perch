@@ -220,3 +220,7 @@ body.preview { min-height: 100vh;
 @media (prefers-reduced-motion: reduce) {
   .eq i, .wave i, .ring .ring-fill, .priv.mic, .bar-dot.meet { transition: none; animation: none; }
 }
+.hud-icon { font-size: 12px; }
+.gear { appearance: none; border: 0; background: none; color: var(--c-text-faint); cursor: pointer; width: 28px; height: 26px;
+  display: grid; place-items: center; border-radius: var(--r-pill); transition: color var(--m-fast), background var(--m-fast), transform var(--m-base) var(--m-ease-out); }
+.gear:hover { color: var(--c-text); background: var(--c-surface-2); transform: rotate(45deg); }

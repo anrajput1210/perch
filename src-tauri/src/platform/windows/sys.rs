@@ -1,13 +1,26 @@
-//! System widgets: battery, CPU, RAM, volume, camera/mic in use (polled once a second as a `sys` event), the live
-//! output level for the media waveform (`level`, ~15 Hz while there is sound), and volume/mute/brightness setters.
+//! System widgets: battery, CPU, RAM, volume, brightness, camera/mic in use (polled once a second as a `sys` event),
+//! the live output level for the media waveform (`level`, ~15 Hz while there is sound), and volume/mute/brightness
+//! setters. Brightness goes through WMI (root\WMI WmiMonitorBrightness*), which only built-in laptop panels support.
 use serde::Serialize;
+use std::sync::atomic::{AtomicI16, Ordering};
+use std::sync::mpsc::{channel, Sender};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
-use windows::core::{Result, HSTRING, PWSTR};
+use windows::core::{w, Error, Result, BSTR, HSTRING, PCWSTR, PWSTR};
+use windows::Win32::Foundation::E_FAIL;
+use windows::Win32::System::Variant::VARIANT;
+use windows::Win32::System::Wmi::{
+    IWbemClassObject, IWbemLocator, IWbemServices, WbemLocator, WBEM_FLAG_FORWARD_ONLY, WBEM_FLAG_RETURN_IMMEDIATELY,
+    WBEM_GENERIC_FLAG_TYPE, WBEM_INFINITE,
+};
 use windows::Win32::Foundation::FILETIME;
 use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
 use windows::Win32::Media::Audio::{eConsole, eRender, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator};
-use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CoSetProxyBlanket, CLSCTX_ALL, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, EOAC_NONE,
+    RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE,
+};
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows::Win32::System::Registry::{RegCloseKey, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_READ, RRF_RT_REG_QWORD};
 use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
@@ -22,6 +35,8 @@ pub struct Sys {
     ram: u8,
     volume: u8,
     muted: bool,
+    /// built-in display brightness, None when the display can't be dimmed by software (most desktop monitors)
+    brightness: Option<u8>,
     /// apps using the camera / microphone right now
     camera: Vec<String>,
     mic: Vec<String>,
@@ -112,12 +127,14 @@ fn read(prev: &mut (u64, u64)) -> Sys {
         ram: mem.dwMemoryLoad as u8,
         volume: (volume * 100.0).round() as u8,
         muted,
+        brightness: u8::try_from(BRIGHTNESS.load(Ordering::Relaxed)).ok(),
         camera: in_use("webcam"),
         mic: in_use("microphone"),
     }
 }
 
 pub fn watch(app: AppHandle) {
+    watch_brightness();
     let a = app.clone();
     std::thread::spawn(move || {
         let mut prev = cpu_times();
@@ -167,33 +184,108 @@ pub async fn set_volume(volume: Option<f32>, muted: Option<bool>) -> std::result
     Ok(())
 }
 
-fn powershell(script: &str) -> std::result::Result<String, String> {
-    use std::os::windows::process::CommandExt;
-    let out = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-        .output()
-        .map_err(|e| e.to_string())?;
-    if out.status.success() { Ok(String::from_utf8_lossy(&out.stdout).trim().to_string()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
+// ---- brightness ----
+
+/// Last brightness read (-1 = unsupported or not read yet).
+static BRIGHTNESS: AtomicI16 = AtomicI16::new(-1);
+/// Requests for the brightness thread, which owns the (thread-bound) WMI connection.
+static SET: Mutex<Option<Sender<u8>>> = Mutex::new(None);
+
+struct Wmi(IWbemServices);
+
+impl Wmi {
+    fn connect() -> Result<Self> {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let loc: IWbemLocator = CoCreateInstance(&WbemLocator, None, CLSCTX_INPROC_SERVER)?;
+            let none = BSTR::new();
+            let svc = loc.ConnectServer(&BSTR::from(r"root\WMI"), &none, &none, &none, 0, &none, None)?;
+            // WMI refuses calls that only identify the caller (COM's default here): impersonate instead
+            const RPC_C_AUTHN_WINNT: u32 = 10;
+            CoSetProxyBlanket(&svc, RPC_C_AUTHN_WINNT, 0, PCWSTR::null(), RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, None, EOAC_NONE)?;
+            Ok(Self(svc))
+        }
+    }
+
+    fn first(&self, class: &str) -> Result<IWbemClassObject> {
+        unsafe {
+            let flags = WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY;
+            let rows = self.0.ExecQuery(&BSTR::from("WQL"), &BSTR::from(format!("SELECT * FROM {class}")), flags, None)?;
+            let (mut row, mut n) = ([None], 0);
+            rows.Next(WBEM_INFINITE, &mut row, &mut n).ok()?;
+            row[0].take().ok_or_else(|| Error::from(E_FAIL))
+        }
+    }
+
+    fn get(&self) -> Option<u8> {
+        let mut v = VARIANT::default();
+        unsafe { self.first("WmiMonitorBrightness").ok()?.Get(w!("CurrentBrightness"), 0, &mut v, None, None).ok()? };
+        u32::try_from(&v).ok().map(|x| x.min(100) as u8)
+    }
+
+    fn set(&self, level: u8) -> Result<()> {
+        unsafe {
+            let display = self.first("WmiMonitorBrightnessMethods")?;
+            let mut path = VARIANT::default();
+            display.Get(w!("__PATH"), 0, &mut path, None, None)?;
+            let mut class = None;
+            self.0.GetObject(&BSTR::from("WmiMonitorBrightnessMethods"), WBEM_GENERIC_FLAG_TYPE(0), None, Some(&mut class), None)?;
+            let (mut sig, mut out) = (None, None);
+            class.ok_or_else(|| Error::from(E_FAIL))?.GetMethod(w!("WmiSetBrightness"), 0, &mut sig, &mut out)?;
+            let args = sig.ok_or_else(|| Error::from(E_FAIL))?.SpawnInstance(0)?;
+            args.Put(w!("Timeout"), 0, &VARIANT::from(0i32), 0)?;
+            args.Put(w!("Brightness"), 0, &VARIANT::from(level), 0)?; // uint8: must be VT_UI1
+            self.0.ExecMethod(&BSTR::try_from(&path)?, &BSTR::from("WmiSetBrightness"), WBEM_GENERIC_FLAG_TYPE(0), None, &args, None, None)
+        }
+    }
 }
 
-/// Built-in display brightness (laptops), 0-100. None when the display doesn't support it (most desktop monitors).
-// ponytail: WMI through PowerShell (~0.3 s per call); fine for a slider that sends on release, not for live dragging
+/// Reads brightness every second (so brightness keys show up on the island) and applies slider moves, newest first.
+fn watch_brightness() {
+    let (tx, rx) = channel::<u8>();
+    *SET.lock().unwrap() = Some(tx);
+    std::thread::spawn(move || {
+        let Ok(wmi) = Wmi::connect() else { return };
+        loop {
+            if let Ok(mut level) = rx.recv_timeout(Duration::from_secs(1)) {
+                while let Ok(newer) = rx.try_recv() {
+                    level = newer; // a drag sends many; only the last one matters
+                }
+                let _ = wmi.set(level);
+            }
+            BRIGHTNESS.store(wmi.get().map_or(-1, i16::from), Ordering::Relaxed);
+        }
+    });
+}
+
 #[tauri::command]
 pub async fn get_brightness() -> Option<u8> {
-    powershell("(Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightness -ErrorAction Stop).CurrentBrightness")
-        .ok()?.lines().next()?.trim().parse().ok()
+    u8::try_from(BRIGHTNESS.load(Ordering::Relaxed)).ok()
 }
 
 #[tauri::command]
 pub async fn set_brightness(level: u8) -> std::result::Result<(), String> {
+    if BRIGHTNESS.load(Ordering::Relaxed) < 0 {
+        return Err("This display's brightness can't be changed from Perch.".into());
+    }
     let level = level.min(100);
-    powershell(&format!("Invoke-CimMethod -Namespace root/wmi -ClassName WmiMonitorBrightnessMethods -MethodName WmiSetBrightness -Arguments @{{Brightness={level};Timeout=0}} -ErrorAction Stop | Out-Null")).map(|_| ())
+    BRIGHTNESS.store(level.into(), Ordering::Relaxed);
+    SET.lock().unwrap().as_ref().ok_or("not ready")?.send(level).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::app_name;
+
+    /// Touches the real display, so opt-in: cargo test -- --ignored brightness
+    #[test]
+    #[ignore]
+    fn brightness_round_trip() {
+        let wmi = super::Wmi::connect().unwrap();
+        let now = wmi.get().expect("this display doesn't support WMI brightness");
+        wmi.set(now).unwrap(); // same value: nothing visible changes
+        assert_eq!(wmi.get(), Some(now));
+    }
 
     #[test]
     fn privacy_app_names() {

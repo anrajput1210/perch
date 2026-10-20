@@ -11,7 +11,7 @@ export type Invoke = <T = unknown>(cmd: string, args?: Record<string, unknown>) 
 export interface Media { title: string; artist: string; app: string; playing: boolean; position: number; duration: number;
   art?: number[] | null; art_type?: string; art_url?: string | null }
 export interface Sys { battery: number | null; charging: boolean; cpu: number; ram: number; volume: number; muted: boolean;
-  camera: string[]; mic: string[] }
+  brightness?: number | null; camera: string[]; mic: string[] }
 export interface Usage { input: number; output: number; cache_read: number; cache_write: number; messages: number; sessions: number }
 /** What the collapsed bar shows when no agent needs it: `lead` is HTML before the label. */
 export interface Activity { label: string; lead?: string }
@@ -54,9 +54,10 @@ export class Widgets {
   private levels: number[] = Array(BARS).fill(0);
   private levelAt = 0;
   sys: Sys | null = null;
-  private hud: { until: number } | null = null;
+  private hud: { kind: "volume" | "brightness"; until: number } | null = null;
   private ownVolumeAt = 0;
-  private brightness: number | null | undefined; // undefined = not asked yet, null = not supported
+  private ownBrightnessAt = 0;
+  private sent: Record<string, number> = {};
   private clips: string[] = [];
   private snippets: string[] = load("perch.snippets", []);
   private clipView: "recent" | "snippets" = "recent";
@@ -108,9 +109,13 @@ export class Widgets {
     const prev = this.sys;
     s = { ...s, camera: s.camera.filter((a) => !OWN_APP.test(a)) };
     this.sys = s;
-    // someone pressed the volume keys (not our slider): show the volume HUD for a moment
-    if (prev && (prev.volume !== s.volume || prev.muted !== s.muted) && Date.now() - this.ownVolumeAt > 1500) {
-      this.hud = { until: Date.now() + 1800 };
+    // someone pressed the volume or brightness keys (not our sliders): show that HUD for a moment
+    const now = Date.now();
+    if (prev && (prev.volume !== s.volume || prev.muted !== s.muted) && now - this.ownVolumeAt > 1500) {
+      this.hud = { kind: "volume", until: now + 1800 };
+    }
+    if (prev && prev.brightness != null && s.brightness != null && prev.brightness !== s.brightness && now - this.ownBrightnessAt > 1500) {
+      this.hud = { kind: "brightness", until: now + 1800 };
     }
     this.host.update();
   }
@@ -198,8 +203,9 @@ export class Widgets {
     const now = Date.now();
     const s = this.sys;
     if (this.hud && s) {
-      return { label: s.muted ? "Muted" : `${s.volume}%`,
-        lead: `<span class="hud-meter"><i style="width:${s.muted ? 0 : s.volume}%"></i></span>` };
+      const [icon, v, label] = this.hud.kind === "brightness" ? ["☀", s.brightness ?? 0, `${s.brightness}%`]
+        : [s.muted ? "🔇" : "🔊", s.muted ? 0 : s.volume, s.muted ? "Muted" : `${s.volume}%`];
+      return { label, lead: `<span class="hud-icon" aria-hidden="true">${icon}</span><span class="hud-meter"><i style="width:${v}%"></i></span>` };
     }
     const t = this.timer;
     if (t) {
@@ -239,7 +245,7 @@ export class Widgets {
       tab === "shelf" ? this.shelf.map((f) => f.path).join() : "",
       tab === "clip" ? this.clipView + this.clips.length + this.clips[0] + this.snippets.join() + (Date.now() - this.copiedAt < 1200) : "",
       tab === "cam" ? `${!!this.cam}${this.camError}` : "",
-      tab === "system" ? JSON.stringify({ ...this.sys, cpu: 0, ram: 0 }) + this.brightness : ""].join("/");
+      tab === "system" ? JSON.stringify({ ...this.sys, cpu: 0, ram: 0, volume: 0, brightness: this.sys?.brightness == null }) : ""].join("/");
   }
 
   render(tab: Tab): string {
@@ -362,18 +368,15 @@ export class Widgets {
   private systemCard() {
     const s = this.sys;
     if (!s) return `<div class="card"><p class="faint">Reading your system…</p></div>`;
-    if (this.brightness === undefined && this.invoke) {
-      this.brightness = null;
-      this.invoke<number | null>("get_brightness").then((b) => { this.brightness = b; this.host.update(); }).catch(() => {});
-    }
     const meter = (label: string, v: number, cls: string) =>
       `<div class="meter"><span>${label}</span><span class="meter-track"><i class="${cls}" style="width:${v}%"></i></span><b class="${cls}-n">${v}%</b></div>`;
     const priv = [...s.camera.map((a) => `Camera · ${a}`), ...s.mic.map((a) => `Microphone · ${a}`)];
     return `<div class="card system"><div class="col">
       <div class="slider-row"><button class="btn ghost sm" data-act="w-mute" aria-label="${s.muted ? "Unmute" : "Mute"}">${s.muted ? "🔇" : "🔊"}</button>
         <input type="range" min="0" max="100" value="${s.volume}" data-field="volume" aria-label="Volume"><b>${s.volume}%</b></div>
-      ${typeof this.brightness === "number" ? `<div class="slider-row"><span class="sun" aria-hidden="true">☀</span>
-        <input type="range" min="0" max="100" value="${this.brightness}" data-field="brightness" aria-label="Brightness"><b>${this.brightness}%</b></div>` : ""}
+      ${s.brightness != null ? `<div class="slider-row"><span class="sun" aria-hidden="true">☀</span>
+        <input type="range" min="0" max="100" value="${s.brightness}" data-field="brightness" aria-label="Brightness"><b>${s.brightness}%</b></div>`
+        : `<p class="faint">${isMac ? "Use the brightness keys; macOS doesn't let apps change it." : "This display's brightness can't be changed by apps (external monitors usually can't)."}</p>`}
     </div><div class="col">
       ${s.battery != null ? meter(s.charging ? "Battery ⚡" : "Battery", s.battery, "live-bat") : ""}
       ${meter("CPU", s.cpu, "live-cpu-bar")}${meter("RAM", s.ram, "live-ram-bar")}
@@ -542,14 +545,19 @@ export class Widgets {
     this.run(this.invoke?.("media_control", { action: "seek", position }));
   }
 
-  /** A slider was released (volume / brightness). */
-  slider(name: string, value: number) {
+  /** A slider moved (volume / brightness): applied live while dragging, at most every 50 ms, and on release. */
+  slider(name: string, value: number, final = false) {
+    const now = Date.now();
+    if (!final && now - (this.sent[name] ?? 0) < 50) return;
+    this.sent[name] = now;
     if (name === "volume") {
-      this.ownVolumeAt = Date.now();
-      this.run(this.invoke?.("set_volume", { volume: value / 100 }));
+      this.ownVolumeAt = now;
+      if (this.sys) this.sys = { ...this.sys, volume: value, muted: false };
+      this.run(this.invoke?.("set_volume", { volume: value / 100, muted: false }));
     }
     if (name === "brightness") {
-      this.brightness = value;
+      this.ownBrightnessAt = now;
+      if (this.sys) this.sys = { ...this.sys, brightness: value };
       this.run(this.invoke?.("set_brightness", { level: value }));
     }
   }

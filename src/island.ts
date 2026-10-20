@@ -55,6 +55,8 @@ export class Island {
   private scale = 1;
   readonly widgets: Widgets;
   private codeMode = true;
+  /** The gear in the header was pressed. */
+  onSettings?: () => void;
   /** The Code mode switch in the header was flipped. */
   onCodeMode?: (on: boolean) => void;
   /** Called with the island's target hit area (window coordinates) whenever it moves or resizes. */
@@ -88,12 +90,14 @@ export class Island {
     this.content.addEventListener("input", (e) => {
       const t = e.target as HTMLInputElement;
       if (t.dataset.act === "other") this.q.other = t.value;
-      if (t.type === "range") t.nextElementSibling!.textContent = `${t.value}%`;
+      if (t.type === "range" && t.dataset.field) {
+        t.nextElementSibling!.textContent = `${t.value}%`;
+        this.widgets.slider(t.dataset.field, Number(t.value));
+      }
     });
-    // sliders send on release: brightness goes through WMI/PowerShell, too slow for every step
     this.content.addEventListener("change", (e) => {
       const t = e.target as HTMLInputElement;
-      if (t.type === "range" && t.dataset.field) this.widgets.slider(t.dataset.field, Number(t.value));
+      if (t.type === "range" && t.dataset.field) this.widgets.slider(t.dataset.field, Number(t.value), true);
     });
     addEventListener("keydown", (e) => this.onKey(e));
     setInterval(() => this.tick(), 200);
@@ -324,7 +328,10 @@ export class Island {
 
   private header(left = this.tabs()) {
     return `<div class="header"><div class="tabs" role="tablist">${left}</div>
-      <div class="right">${this.codeMode && this.snap.sessions.length ? `<span>${this.snap.sessions.length} running</span>` : ""}${this.codeSwitch()}</div></div>`;
+      <div class="right">${this.codeMode && this.snap.sessions.length ? `<span>${this.snap.sessions.length} running</span>` : ""}${this.codeSwitch()}
+        <button class="gear" data-act="settings" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+          stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></div></div>`;
   }
 
   /** Code mode switch: a tiny terminal. Off it's a dim </> chip; on, the knob becomes a prompt with a blinking
@@ -448,6 +455,7 @@ export class Island {
       this.onCodeMode?.(this.codeMode);
       setTimeout(() => { this.renderKey = ""; this.update(); }, 650);
     }
+    else if (act === "settings") this.onSettings?.();
     else if (act === "tab") { this.tab = b.dataset.tab as Tab; this.update(); }
     else if (act === "w-seek") this.widgets.seek(b, (e as MouseEvent).clientX);
     else if (act.startsWith("w-")) this.widgets.action(act, b);

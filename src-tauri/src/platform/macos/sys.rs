@@ -16,6 +16,7 @@ pub struct Sys {
     ram: u8,
     volume: u8,
     muted: bool,
+    brightness: Option<u8>,
     camera: Vec<String>,
     mic: Vec<String>,
 }
@@ -60,6 +61,7 @@ pub fn watch(app: AppHandle) {
                 ram: (100 * sys.used_memory() / sys.total_memory().max(1)) as u8,
                 volume,
                 muted,
+                brightness: None,
                 camera: vec![],
                 mic: vec![],
             };
